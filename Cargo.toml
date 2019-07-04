@@ -1,0 +1,10 @@
+[package]
+name = "rust-core-utils"
+version = "0.1.0"
+authors = ["quirinux"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.2"
+log = "0.4.0"
+env_logger = "0.6.2"
