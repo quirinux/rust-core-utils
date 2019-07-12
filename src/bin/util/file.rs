@@ -1,7 +1,7 @@
-
 use std::io::{BufRead, BufReader, self};
 use std::fs::{File, metadata};
 
+use std::collections::VecDeque;
 
 pub fn new(path: String) -> FileDetail {
     FileDetail{
@@ -19,30 +19,17 @@ pub struct FileDetail {
 
 impl FileDetail {
     fn is_dir(&self) -> Result<bool, io::Error> {
-        let md = match metadata(self.path.clone()) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!("couldn't determine metadata for => {}", self.path);
-                return Err(e);
-            },
-        };
-        debug!("Is {} a dir? {}", self.path, md.is_dir());
+        let md = metadata(self.path.clone())?;
+        trace!("Is {} a dir? {}", self.path, md.is_dir());
         Ok(md.is_dir())
     }
     
     fn open_buffer(&mut self) -> Result<(), io::Error> {
         if self.path != "-" {
-            match self.is_dir() {
-                Ok(f) => {
-                    if f {
-                        let error_msg = format!("Is a directory");
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, error_msg));
-                    }
-                },
-                Err(e) => {
-                    warn!("could'nt say if id_dir => {}", e);
-                    return Err(e);
-                },
+            if self.is_dir()? {
+                let error_msg = format!("Is a directory");
+                warn!("open_buffer => {} is dir", self.path.clone());
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, error_msg));
             }
         }
         self.bufread = match self.path.as_ref() {
@@ -51,13 +38,7 @@ impl FileDetail {
                 Box::new(BufReader::new(io::stdin()))
             },
             _ => {
-                let opened_file = match File::open(self.path.clone()) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        warn!("error found when opening file => {}", e);
-                        return Err(e);
-                    },
-                };
+                let opened_file = File::open(self.path.clone())?;
                 Box::new(BufReader::new(opened_file))
             },
         };
@@ -72,7 +53,6 @@ impl FileDetail {
         trace!("reading by line");
         let mut _line = String::new();
         match self.bufread.read_line(&mut _line) {
-            //match n {
             Ok(i) => {
                 debug!("read_line lenght => {}", i);
                 if i == 0 {
@@ -94,14 +74,14 @@ impl FileDetail {
         let mut buffer = vec![0u8; lenght];
         match self.bufread.read(&mut buffer.as_mut_slice()) {
             Ok(n) => {
-                debug!("read chunk of size => {}", n);
+                trace!("read chunk of size => {}", n);
                 if n == 0 {
                     trace!("empty chunk found, returning None");
                     return None;
                 }                
             },
             Err(e) => {
-                debug!("read chunk error => {}", e);
+                warn!("read chunk error => {}", e);
                 return None;
             },
         };
@@ -110,5 +90,65 @@ impl FileDetail {
 
     pub fn is_text(&self) -> bool {
         self.is_text
+    }
+
+    pub fn walk_buffer_bytes(&mut self, bytes: usize) {
+        trace!("walking buffer bytes => {} - {}", bytes, self.path.clone());
+        for _ in 0..bytes {
+            self.read_chunk(1);
+        }
+    }
+
+    pub fn walk_buffer_lines(&mut self, lines: usize) {
+        for _ in 0..lines {
+            self.read_line();
+        }
+    }
+
+    pub fn last_bytes(&mut self, bytes: usize) -> (usize, Vec<u8>) {
+        let mut bunch: VecDeque<u8> = VecDeque::with_capacity(bytes);
+        let mut size = 0;
+        loop {
+            let b = match self.read_chunk(1) {
+                Some(s) => s, 
+                None => break,
+            };
+            for i in b {
+                bunch.push_back(i);
+                size += 1;
+            }
+            if bunch.len() > bytes {
+                bunch.pop_front();
+            }
+        }
+        //bunch.shrink_to(0);
+        (size, bunch.iter().map(|r| *r).collect())
+    }
+
+    pub fn last_lines(&mut self, lines: usize) -> (usize, Vec<String>) {
+        let mut bunch: VecDeque<String> = VecDeque::with_capacity(lines);
+        let mut size = 0;
+        loop {
+            let b = match self.read_line() {
+                Some(s) => s, 
+                None => break,
+            };
+            bunch.push_back(b);
+            size += 1;
+            if bunch.len() > lines {
+                bunch.pop_front();
+            }
+        }
+        //bunch.shrink_to(0);
+        (size, bunch.iter().map(|r| r.to_string()).collect())
+    }
+
+    pub fn path(&self) -> String {
+        self.path.clone()
+    }
+
+    pub fn len(&self) -> Result<u64, io::Error> {
+        let md = metadata(self.path.clone())?;
+        Ok(md.len())
     }
 }

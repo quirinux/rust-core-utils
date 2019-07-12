@@ -51,3 +51,11 @@ A part form that all cargo workflow should work fine.
 - how to pass ownership through
 - log strategy
 - Improved a lot how to handle error
+
+### 4. tail
+- enum
+- thread operation and strategy
+- crossbeam channel
+- implement fmt traits for better display and debug
+- increased error handling knowledge
+- 

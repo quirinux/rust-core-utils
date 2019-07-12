@@ -42,6 +42,9 @@ impl Opt {
     fn initialize(&mut self) {
         self.silent = !self.verbose;
         self.quiet = self.silent;
+        if self.files.len() <= 0 {
+            self.files.push("-".to_string());
+        }
     }
 }
 
