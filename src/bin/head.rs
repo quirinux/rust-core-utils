@@ -68,7 +68,7 @@ fn main() {
             println!("==> {} <==", file);
         }
         
-        match f.prepare(){
+        match f.prepare(0){
             Err(e) => {
                 info!("error found while preparing file {} => {}", file, e);
                 println!("head: cannot open '{}' for reading: {}", file, e);

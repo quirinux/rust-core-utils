@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, self};
+use std::io::{BufRead, BufReader, self, Seek};
 use std::fs::{File, metadata};
 
 use std::collections::VecDeque;
@@ -8,6 +8,7 @@ pub fn new(path: String) -> FileDetail {
         path: path, 
         is_text: true,
         bufread: Box::new(BufReader::new(File::open(".").unwrap())),
+        bufpos: 0,
     }
 }
 
@@ -15,6 +16,7 @@ pub struct FileDetail {
     path: String,
     is_text: bool,
     bufread: Box<BufRead>,
+    bufpos: usize,
 }
 
 impl FileDetail {
@@ -24,8 +26,8 @@ impl FileDetail {
         Ok(md.is_dir())
     }
     
-    fn open_buffer(&mut self) -> Result<(), io::Error> {
-        if self.path != "-" {
+    fn open_buffer(&mut self, start_pos: usize) -> Result<(), io::Error> {
+        if !self.is_stdin() {
             if self.is_dir()? {
                 let error_msg = format!("Is a directory");
                 warn!("open_buffer => {} is dir", self.path.clone());
@@ -38,15 +40,22 @@ impl FileDetail {
                 Box::new(BufReader::new(io::stdin()))
             },
             _ => {
-                let opened_file = File::open(self.path.clone())?;
+                let mut opened_file = File::open(self.path.clone())?;
+                self.bufpos = match opened_file.seek(std::io::SeekFrom::Start(start_pos as u64)) {
+                    Ok(p) => p as usize,
+                    Err(e) => {
+                        error!("open_buffer, not able to seek: {}", e);
+                        0
+                    },
+                };
                 Box::new(BufReader::new(opened_file))
             },
         };
         Ok(())
     }
 
-    pub fn prepare(&mut self) -> Result<(), io::Error> {
-        self.open_buffer()
+    pub fn prepare(&mut self, start_pos: usize) -> Result<(), io::Error> {
+        self.open_buffer(start_pos)
     }
     
     pub fn read_line(&mut self) -> Option<String> {
@@ -55,6 +64,7 @@ impl FileDetail {
         match self.bufread.read_line(&mut _line) {
             Ok(i) => {
                 debug!("read_line lenght => {}", i);
+                self.bufpos += i;
                 if i == 0 {
                     return None;
                 }
@@ -75,6 +85,7 @@ impl FileDetail {
         match self.bufread.read(&mut buffer.as_mut_slice()) {
             Ok(n) => {
                 trace!("read chunk of size => {}", n);
+                self.bufpos += n;
                 if n == 0 {
                     trace!("empty chunk found, returning None");
                     return None;
@@ -94,14 +105,18 @@ impl FileDetail {
 
     pub fn walk_buffer_bytes(&mut self, bytes: usize) {
         trace!("walking buffer bytes => {} - {}", bytes, self.path.clone());
-        for _ in 0..bytes {
-            self.read_chunk(1);
+        if !self.is_stdin() {
+            for _ in 0..bytes {
+                self.read_chunk(1);
+            }
         }
     }
 
     pub fn walk_buffer_lines(&mut self, lines: usize) {
-        for _ in 0..lines {
-            self.read_line();
+        if !self.is_stdin() {
+            for _ in 0..lines {
+                self.read_line();
+            }
         }
     }
 
@@ -121,7 +136,6 @@ impl FileDetail {
                 bunch.pop_front();
             }
         }
-        //bunch.shrink_to(0);
         (size, bunch.iter().map(|r| *r).collect())
     }
 
@@ -139,7 +153,6 @@ impl FileDetail {
                 bunch.pop_front();
             }
         }
-        //bunch.shrink_to(0);
         (size, bunch.iter().map(|r| r.to_string()).collect())
     }
 
@@ -148,7 +161,20 @@ impl FileDetail {
     }
 
     pub fn len(&self) -> Result<u64, io::Error> {
+        if self.is_stdin() {
+            let error_msg = format!("STDIN has no lenght");
+            warn!("len => {} is stdin", self.path.clone());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, error_msg));
+        }
         let md = metadata(self.path.clone())?;
         Ok(md.len())
+    }
+
+    pub fn is_stdin(&self) -> bool {
+        self.path() == "-".to_string()
+    }
+
+    pub fn buffer_position(&self) -> usize {
+        self.bufpos
     }
 }
